@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>twitter</title>
+	<style>
+		svg
+		{
+			background-color: rgb(28, 39, 51);
+		}
+		
+		.nodes > circle
+		{
+			stroke: black;
+		}
+		
+		.nodes > a > text
+		{
+			font-family: sans-serif;
+			font-weight: bold;
+			stroke: #000000;
+            fill: #FFFFFF;
+			stroke-width: 1px;
+		}
+		
+		.title
+		{
+			font-family: sans-serif;
+		}
+		
+		.title
+		{
+            fill: #FFFFFF;
+			stroke-width: 1px;
+		}		
+		
+		.y-axis text
+		{
+			font-family: helvetica;
+            fill: #FFFFFF;
+			stroke-width: 1px;
+			font-size: 20pt;
+			stroke-linejoin: round;
+		}
+		
+		a
+		{
+			cursor: pointer;
+		}
+		
+		.stock-button
+		{
+		    background: #ededed;
+		    border: 1px solid #ccc;
+		    -webkit-box-shadow: 1px 1px 2px #ccc;
+			-moz-box-shadow: 1px 1px 2px #ccc;
+			box-shadow: 1px 1px 2px #ccc;
+			padding: 10px 30px;
+			border-radius: 3px;
+			cursor: pointer;
+			font-size: 26pt;
+		}
+
+		.stock-button:active
+		{
+			background: #e0e0e0;
+			outline: none;
+			-webkit-box-shadow: inset 0px 0px 4px #ccc;
+			-moz-box-shadow: inset 0px 0px 4px #ccc;
+			box-shadow: inset 0px 0px 4px #ccc;
+		}
+	</style>
+	<script src = "https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.0.3/howler.core.min.js"></script>
+	<script>
+		const w = 1690;
+		const h = 780;
+		var data = [];
+		var globalNodes = [];
+		var dataDict = {};
+		var globalId = 0;
+		var rectW = 300;
+		var rectH = 600;
+		var stockMode = false;
+		var socket = null;
+		var button = null;
+		
+		var moodData = [{
+                "name": "Anger",
+                "value": 0,
+        },
+            {
+                "name": "Disgust",
+                "value": 0,
+        },
+            {
+                "name": "Fear",
+                "value": 0,
+        },
+            {
+                "name": "Joy",
+                "value": 0,
+        },
+            {
+                "name": "Sadness",
+                "value": 0,
+        }];
+	
+		class Node
+		{
+			constructor(x, y, r)
+			{
+				this.x = x;
+				this.y = y;
+				this.r = r;
+			}
+		}
+
+		class Stock
+		{
+			constructor(symbol, moods, count = 0)
+			{
+				this.hashtag = symbol;
+				this.count = count;
+				this.id = globalId++;
+				this.node = new Node(getRandomInt(75, w - 75 - rectW), getRandomInt(75, h - 75), 75);
+				this.moods = moods;
+				addDataToMoodChart(moods);
+				this.node.index = this.id;
+				globalNodes.push(this.node);
+				var self = this;
+				this.timer = setTimeout(function() {
+					fadeAway(self);
+				}, 7500);
+			}
+			increment()
+			{
+				this.count++;
+				this.update();
+			}
+			update()
+			{
+				var self = this;
+				var g = d3.select("svg")
+					.select("#node" + self.id)
+					
+				var circle = g.selectAll("circle")
+					.transition()
+					.delay(0)
+					.duration(750)
+					.attr("r", (self.node.r = self.node.r + 25));
+					
+				var text = g.selectAll("text")
+				var currentFontSize = text.style("font-size");
+				text.transition()
+				.delay(0)
+				.duration(750)
+				.style("font-size", (parseInt(currentFontSize.substring(0, currentFontSize.length - 2)) + 30) + "px");
+			}
+		}
+		
+		class Hashtag
+		{
+			constructor(hashtag, link, moods, count = 0)
+			{
+				this.count = count;
+				this.hashtag = hashtag;
+				this.node = new Node(getRandomInt(75, w - 75 - rectW), getRandomInt(75, h - 75), 75);
+				this.id = globalId++;
+				this.node.index = this.id;
+				this.moods = moods;
+				addDataToMoodChart(moods);
+				globalNodes.push(this.node);
+				this.link = link;
+				var self = this;
+				this.timer = setTimeout(function() {
+					fadeAway(self);
+				}, 7500);
+			}
+			increment()
+			{
+				this.count++;
+				this.update();
+			}
+			update()
+			{
+				var self = this;
+				var g = d3.select("svg")
+					.select("#node" + self.id)
+					
+				var circle = g.selectAll("circle")
+					.transition()
+					.delay(0)
+					.duration(750)
+					.attr("r", (self.node.r = self.node.r + 75));
+					
+				var text = g.selectAll("text")
+				var currentFontSize = text.style("font-size");
+				text.transition()
+				.delay(0)
+				.duration(750)
+				.style("font-size", (parseInt(currentFontSize.substring(0, currentFontSize.length - 2)) + 30) + "px");
+			}
+		}
+		
+		function fadeAway(obj)
+		{
+			var g = d3.select("svg")
+				.select("#node" + obj.id);
+			var circle = g.selectAll("circle");
+			var text = g.selectAll("text")
+			try
+			{
+				var currentFontSize = text.style("font-size");
+			}
+			catch(error)
+			{
+				console.log(obj);
+			}
+			
+			if (circle.attr("r") < 75 || obj.node.r < 75 || currentFontSize < 30 || !currentFontSize)
+			{
+				dataDict[obj.hashtag.toLowerCase()] = null;
+				removeDataFromMoodChart(obj.moods);
+				d3.select("#node" + obj.id)
+					.transition()
+					.style("fill-opacity", 1e-6)
+					.remove();
+				
+				data.splice(data.indexOf(obj), 1);
+				globalNodes.splice(data.indexOf(obj), 1);
+			}
+			else
+			{
+				var timer = setTimeout(function() {
+					fadeAway(obj);
+				}, 7500);
+				circle.transition()
+					.delay(0)
+					.duration(750)
+					.attr("r", (obj.node.r = obj.node.r - 75));
+				text.transition()
+					.delay(0)
+					.duration(750)
+					.style("font-size", (parseInt(currentFontSize.substring(0, currentFontSize.length - 2)) - 30) + "px");
+			}
+				
+		}
+		
+		function getRandomInt(min, max)
+		{
+			return Math.floor(Math.random() * (max - min + 1)) + min;
+		}
+		
+		var idList = {};
+		
+		function addNode(idx)
+		{
+			var svg = d3.select("svg");
+			
+			nodes = svg.selectAll(".nodes")
+					.data(data)
+					.enter();
+						
+			var force = d3.layout.force()
+				.nodes(globalNodes)
+				.size([w, h])
+				.charge(-5000);
+			
+			force.start();
+			
+			var g = nodes.append("g")
+						.classed("nodes", true)
+						.attr("id", function(d, i) {
+							return "node" + globalId
+						});
+			
+			function collide(node) {
+			  var r = node.r + 16,
+				  nx1 = node.x - r,
+				  nx2 = node.x + r,
+				  ny1 = node.y - r,
+				  ny2 = node.y + r;
+			  return function(quad, x1, y1, x2, y2) {
+				if (quad.point && (quad.point !== node)) {
+				  var x = node.x - quad.point.x,
+					  y = node.y - quad.point.y,
+					  l = Math.sqrt(x * x + y * y),
+					  r = node.radius + quad.point.radius;
+				  if (l < r) {
+					l = (l - r) / l * .5;
+					node.x -= x *= l;
+					node.y -= y *= l;
+					quad.point.x += x;
+					quad.point.y += y;
+				  }
+				}
+				return x1 > nx2
+					|| x2 < nx1
+					|| y1 > ny2
+					|| y2 < ny1;
+			  };
+			}
+
+			force.on("tick", function(e) {
+			    var q = d3.geom.quadtree(globalNodes),
+				    i = 0,
+				    n = globalNodes.length;
+
+			    while (++i < n) {
+				  q.visit(collide(globalNodes[i]));
+			    }
+				g.attr("transform", function(d) { return "translate(" + (d.node.x = Math.max(d.node.r, Math.min(w - d.node.r - rectW - 50, d.node.x))) + "," + (d.node.y = Math.max(d.node.r, Math.min(h - d.node.r, d.node.y))) + ")" }  )
+			});
+			
+			var a = g.append("a")
+					.attr("xlink:href", function(d) { return d.link } )
+					.attr("target", "_blank");
+			
+			var explosionCircle = a.append("circle")
+									.attr("r", function(d) { return d.node.r} )
+									.attr("fill", "white")
+									.transition()
+									.duration(3000)
+									.style("fill-opacity", 1e-6)
+									.attr("r", function(d) { return d.node.r + 60})
+									.remove();
+			
+			var circles = a.append("circle")
+							.attr("r", function(d) { return d.node.r } )
+							.attr("fill", function(d) {
+								var greatestEmotion = findGreatestEmotion(d.moods);
+								switch (greatestEmotion)
+								{
+									case "Sadness":
+										var audio = new Audio("sad.mp3");
+										audio.play();
+										return "blue";
+										break;
+									case "Joy":
+										var audio = new Audio("joy.mp3");
+										audio.play();
+										return "yellow";
+										break;
+									case "Fear":
+										var audio = new Audio("fear.mp3");
+										audio.play();
+										return "black";
+										break;
+									case "Disgust":
+										var audio = new Audio("disgust.mp3");
+										audio.play();
+										return "green";
+										break;
+									case "Anger":
+										var audio = new Audio("angry.mp3");
+										audio.play();
+										return "red";
+										break;
+									default:
+										return "orange";
+										break;
+								}
+							})
+							.on("mouseover", function(d) { 
+								console.log(d3.select(this.parentNode).select("text"));
+								var text = d3.select(this.parentNode).select("text");
+								var fontSize = text.style("font-size");
+								console.log(parseInt(fontSize.substring(0, fontSize.length - 2) + 30) + "px");
+								text.transition()
+									.delay(0)
+									.duration(400)
+									.style("font-size", function() { return (parseInt(fontSize.substring(0, fontSize.length - 2)) + 30) + "px" } );
+								d3.select(this)
+									.transition()
+									.delay(0)
+									.duration(400)
+									.attr("r", function(d) { return (d.node.r = d.node.r + 30) } )
+								
+							})
+							.on("mouseout", function(d) { 
+								var text = d3.select(this.parentNode).select("text");
+								var fontSize = text.style("font-size");
+								text.transition()
+									.delay(0)
+									.duration(400)
+									.style("font-size", function() { return(parseInt(fontSize.substring(0, fontSize.length - 2)) - 30) + "px" } );
+								d3.select(this)
+									.transition()
+									.delay(0)
+									.duration(400)
+									.attr("r", function(d) { return (d.node.r = d.node.r - 30) } )
+							})
+							.transition()
+							.delay(0)
+							.duration(750)
+							.attr("r", function(d) { return (d.node.r = d.node.r - 15)});
+							
+			var text = a.append("text")
+							.text(function(d) { return d.hashtag } ) //TODO
+							.attr("text-anchor", "middle")
+							.attr("dy", ".3em")
+							.style("font-size", function(d) { return Math.min(2 * (d.node.r), (2 * (d.node.r) - 8) / this.getComputedTextLength() * 16) + "px"; });
+							
+		}
+		
+		function addHashTag(hashtag, mood)
+		{
+			if (hashtag)
+			{
+				if (!dataDict[hashtag[0].toLowerCase()])
+				{
+					var hashtagObject = new Hashtag(hashtag[0], hashtag[1], mood);
+					data.push(hashtagObject);
+					addNode(globalId);
+					dataDict[hashtag[0].toLowerCase()] = hashtagObject;
+				}
+				else
+				{
+					console.log("duplicate found");
+					dataDict[hashtag[0].toLowerCase()].increment();
+				}
+			}
+		}
+		
+		function addStock(symbol, mood)
+		{
+			if (symbol)
+			{
+				if (!dataDict[symbol.toLowerCase()])
+				{
+					var stockObject = new Stock(symbol, mood);
+					data.push(stockObject);
+					addNode();
+					dataDict[symbol.toLowerCase()] = stockObject;
+				}
+				else
+				{
+					dataDict[symbol.toLowerCase()].increment();
+				}
+			}
+		}
+		
+		function addDataToMoodChart(moods)
+		{
+			for (var i = 0; i < moods.length; i++)
+			{
+				for (var j = 0; j < moods.length; j++)
+				{
+					if (moods[i]["tone_name"] === moodData[j]["name"])
+					{
+						moodData[j].value += moods[i]["score"];
+						break;
+					}
+				}
+			}
+			updateBarChart();
+		}
+		
+		function removeDataFromMoodChart(moods)
+		{
+			for (var i = 0; i < moods.length; i++)
+			{
+				for (var j = 0; j < moods.length; j++)
+				{
+					if (moods[i]["tone_name"] === moodData[j]["name"])
+					{
+						if (moodData[j].value - moods[i]["score"] < 0)
+						{
+							moodData[j].value = 0;
+						}
+						else
+						{
+							moodData[j].value -= moods[i]["score"]
+						}
+						break;
+					}
+				}
+			}
+			updateBarChart();
+		}
+		
+		function roundMoodData(moods)
+		{
+			for (var i = 0; i < moods[i].length; i++)
+			{
+				moods[i].score = parseInt(moods[i].score);
+			}
+			return moods;
+		}
+		
+		function findGreatestEmotion(emotions)
+		{
+			var greatestEmotionSoFarValue = 0;
+			var greatestEmotionSoFar = "";
+			for (var i = 0; i < emotions.length; i++) {
+				if (emotions[i]["score"] > greatestEmotionSoFarValue) {
+					greatestEmotionSoFarValue = emotions[i]["score"];
+					greatestEmotionSoFar = emotions[i]["tone_name"];
+				}
+			}
+			return greatestEmotionSoFar;
+		}
+		
+		function updateBarChart()
+		{
+			/* Code from simple bar chart https://bl.ocks.org/hrecht/f84012ee860cb4da66331f18d588eee3 */
+			var barChart = d3.selectAll(".barchart");
+			
+			var x = d3.scale.linear()
+				.range([0, rectW - 70])
+				.domain([0, d3.max(moodData, function (d) {
+                return d.value;
+            })]);
+
+			var y = d3.scale.ordinal()
+				.rangeRoundBands([rectH, 0], .78)
+				.domain(moodData.map(function (d) {
+                return d.name;
+            }));
+			
+			var yAxis = d3.svg.axis()
+					.scale(y)
+					.tickSize(0)
+					.orient("left");
+			
+			var gy = barChart.attr("class", "y-axis")
+					.call(yAxis)
+
+			var rect = d3.selectAll(".bar");
+			rect.attr("class", "bar")
+				.attr("y", function (d) {
+					return y(d.name);
+				})
+				.attr("height", y.rangeBand())
+				.attr("x", 5)
+				.transition()
+				.duration(200)
+				.attr("width", function (d) {
+					return x(d.value);
+				})
+				.attr("fill", function(d, i) {
+					switch (i)
+					{
+						case 0:
+							return "red";
+							break;
+						case 1:
+							return "green";
+							break;
+						case 2:
+							return "black";
+							break;
+						case 3:
+							return "yellow";
+							break;
+						case 4:
+							return "blue";
+							break;
+						default:
+							return "orange";
+							break;
+					}
+				});
+
+        
+			/* End citation */
+		}
+		
+		function setUpBarChart()
+		{
+			var gDaddy = d3.selectAll(".mood");
+			
+			var barChart = gDaddy.append("g")
+							.classed("barchart", true)
+							.attr("transform", "translate(60, 0)");
+			
+			var x = d3.scale.linear()
+				.range([0, rectW - 70])
+				.domain([0, d3.max(moodData, function (d) {
+                return d.value;
+            })]);
+
+			var y = d3.scale.ordinal()
+				.rangeRoundBands([rectH, 0], .78)
+				.domain(moodData.map(function (d) {
+                return d.name;
+            }));
+			
+			var yAxis = d3.svg.axis()
+					.scale(y)
+					.tickSize(0)
+					.orient("left");
+			
+			var gy = barChart.attr("class", "y-axis")
+					.call(yAxis)
+
+			var bars = barChart.selectAll(".bar")
+            .data(moodData);
+			
+			bars.enter()
+            .append("g");
+
+			//append rects
+			bars.append("rect")
+				.attr("class", "bar")
+				.attr("y", function (d) {
+					return y(d.name);
+				})
+				.attr("height", y.rangeBand())
+				.attr("x", 5)
+				.transition()
+				.duration(200)
+				.attr("width", function (d) {
+					return x(d.value);
+				})
+				.attr("fill", function(d, i) {
+					switch (i)
+					{
+						case 0:
+							return "red";
+							break;
+						case 1:
+							return "green";
+							break;
+						case 2:
+							return "black";
+							break;
+						case 3:
+							return "yellow";
+							break;
+						case 4:
+							return "blue";
+							break;
+						default:
+							return "orange";
+							break;
+					}
+				});
+
+		}
+		
+		function addButton(svg)
+		{
+			var fo = svg.append("foreignObject")
+						.on("click", function() { initStockMode() })
+						.attr({
+							"x": w - rectW / 2 - 150,
+							"y": h / 1.25,
+							"width": 300,
+							"class": "svg-stock-button"
+						});
+			
+			var div = fo.append("xhtml:div")
+							.append("div")
+							.attr({
+								"class": "div-stock-button"
+							});
+			
+			button = div.append("div")
+						.attr("class", "div-stock-button2")
+						.html("<button class='stock-button'>Stock Mode</button>");
+		}
+		
+		function resetMoodData()
+		{
+			for (var i = 0; i < moodData.length; i++)
+			{
+				moodData[i].value = 0;
+			}
+			updateBarChart();
+		}
+		
+		function resetNodeData()
+		{
+			var data = [];
+			var globalNodes = [];
+			var dataDict = {};
+			d3.select("svg").selectAll(".nodes")
+				.data(data)
+				.exit()
+				.transition()
+				.style("fill-opacity", 1e-6)
+				.remove();
+		}
+		
+		function initStockMode()
+		{
+			resetMoodData();
+			resetNodeData();
+			globalId = 0;
+			var id = 75;
+			while (id--)
+			{
+				window.clearTimeout(id);
+			}
+			if (socket)
+			{
+				socket.disconnect();
+			}
+			if (stockMode)
+			{
+				button.html("<button class='stock-button'>Stock Mode</button>");
+				stockMode = false;
+				socket = io.connect('http://7e9539b8.ngrok.io');
+				socket.on("stream", function(hashtag) {
+					addHashTag(hashtag, hashtag[2]);
+				});
+			}
+			else
+			{
+				button.html("<button class='stock-button'>Normal Mode</button>");
+				stockMode = true;
+				socket = io.connect('http://68dfd80f.ngrok.io');
+				socket.on("stream", function(symbol) {
+					addStock(symbol[0].toUpperCase(), symbol[1]);			
+				});
+			}
+		}
+		
+		//REMOVE DUPLICATE TWEETS
+		function initialize()
+		{
+			var svg = d3.select(".main")
+						.append("svg")
+						.attr("width", w)
+						.attr("height", h)
+			
+			var g = svg.append("g")
+						.classed("mood", true)
+						.attr("transform", "translate(" + (w - rectW - 20) + ", 20)");
+			
+			var rect = g.append("rect")
+						.attr("width", rectW)
+						.attr("height", rectH)
+						.attr("fill", "none");
+						
+			var moodTitle = g.append("text")
+							.classed("title", true)
+							.attr("text-anchor", "middle")
+							.attr("x", "3.8em")
+							.attr("y", ".9em")
+							.attr("font-size", "30pt")
+							.text("Mood");
+			
+			setUpBarChart();
+			updateBarChart();
+			addButton(svg);
+			socket = io.connect('http://7e9539b8.ngrok.io');
+			socket.on("stream", function(hashtag) {
+				addHashTag(hashtag, hashtag[2]);
+			});
+			/*
+			socket = io.connect('http://68dfd80f.ngrok.io');
+				socket.on("stream", function(symbol) {
+					addStock(symbol[0].toUpperCase(), symbol[1]);			
+				});*/
+		}
+		
+		$(document).ready(function() {
+			initialize();
+		})
+	</script>
+	</head>
+	<body>
+		<div class = "main">
+		<div>
+	</body>
+</html>
